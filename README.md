@@ -1,5 +1,6 @@
 ## KAN-STNet
 A Novel High-Dimensional Spatiotemporal Prediction Framework Based on Kolmogorov-Arnold Networks
+![Uploading 图片1.png…]()
 
 ## Overview
 KAN-STNet is a novel high-dimensional spatiotemporal prediction framework that integrates three core technologies: delay embedding theory, spatiotemporal information transformation (STI), and Kolmogorov-Arnold Network (KAN).
