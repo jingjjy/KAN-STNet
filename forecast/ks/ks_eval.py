@@ -1,6 +1,6 @@
 from forecast import st_delay_model
 from data import data_processing
-from forecast.ks import ks_config
+from forecast.ks_bzh import ks_config
 from scipy.stats import pearsonr
 import numpy as np
 import pickle
@@ -13,9 +13,10 @@ matplotlib.use('agg')
 import matplotlib.pyplot as plt
 import json
 import pandas as pd
+
 def draw_pic(known_y, label_y, predict_y, loss, pcc, x_label=None, y_label=None, y_lim=None,
              title=None, path=None, figsize=None):
-    plt.rcParams['figure.figsize'] = figsize 
+    plt.rcParams['figure.figsize'] = figsize
     plt.rcParams['savefig.dpi'] = 200
     fontsize = 17
     plt.title(title + ", PCC:{:.5f}".format(pcc), fontdict={'family': 'Times New Roman', 'size': fontsize})
@@ -33,15 +34,13 @@ def draw_pic(known_y, label_y, predict_y, loss, pcc, x_label=None, y_label=None,
     plt.plot(x, all_y, color='blue', marker='.')
 
     x = np.arange(train_len, len(all_y))
-
     if title == 'lorenz':
         plt.scatter(x, predict_y, color='none', edgecolors='red', marker='o',
                     label='trained_loss:{:.2f},pcc:{:.2f}'.format(loss, pcc),
                     zorder=10, linewidths=1.2, s=40)
     else:
         plt.plot(x, predict_y, color='red', marker='.', label='trained_loss:{:.4f},pcc:{:.5f}'.format(loss, pcc))
-
-        connected_y = np.stack([known_y[-1], predict_y[0]]) 
+        connected_y = np.stack([known_y[-1], predict_y[0]])
         x = np.arange(train_len - 1, train_len + 1)
         plt.plot(x, connected_y, color='red')
 
@@ -53,21 +52,17 @@ def draw_pic(known_y, label_y, predict_y, loss, pcc, x_label=None, y_label=None,
         plt.savefig(path)
         plt.clf()
 
-
 def get_model_path(base_log_dir, config):
     name_pattern = re.compile('.*\({}\)'.format(config.name))
-    file_pattern = re.compile('weights_epoch:{:0>4d}.*'.format(config.EPOCHS))
+    file_pattern = re.compile('weights_epoch_{:0>4d}.*'.format(config.EPOCHS))
     model_path = None
-
     for d in os.listdir(base_log_dir):
-        print(d)
         if name_pattern.match(d):
             for f in os.listdir(os.path.join(base_log_dir, d)):
                 if file_pattern.match(f):
                     model_path = os.path.join(base_log_dir, d, f)
                     print('load weights from: {}'.format(model_path))
                     return model_path
-
     return model_path
 
 def save_delay_matrix(delay_matrix, path):
@@ -83,10 +78,11 @@ def plot_delay_matrix(matrix, path):
     plt.close()
 
 if __name__ == '__main__':
-    is_solar = False
     config = ks_config.KSConfig()
-    config.BATCH_SIZE = 1
-    tf.keras.backend.clear_session() 
+    config.BATCH_SIZE = 4
+    config.ADD_NOISE = True
+    config.DATA_NOISE_STRENGTH = 0.3
+    tf.keras.backend.clear_session()
 
     gpus = tf.config.experimental.list_physical_devices(device_type='GPU')
     for gpu in gpus:
@@ -95,7 +91,6 @@ if __name__ == '__main__':
     data = data_processing.load_ks_data()
 
     total_length = len(data)
-
     train_idxs, val_idxs, test_idxs = data_processing.get_data_idxs_as_predict_idx_no_overlap(
         total_length=total_length,
         train_len=config.TRAIN_LEN,
@@ -103,14 +98,19 @@ if __name__ == '__main__':
         rate=1,
         interval=60
     )
-    mean_train_losses = []
-    mean_train_pccs = []
 
-    results = {}
-
-    model = st_delay_model.STDelayModel(config, mode='evaluation', log_dir_suffix=config.name)
+    scaler_path = os.path.join('logs', config.name, 'scaler.pkl')
+    if not os.path.exists(scaler_path):
+        raise FileNotFoundError(f"请先运行 ks_train.py 训练模型")
+    with open(scaler_path, 'rb') as f:
+        scaler_params = pickle.load(f)
+    mean = scaler_params['mean']
+    std = scaler_params['std']
+    y_mean = mean[config.Y_IDX]
+    y_std = std[config.Y_IDX]
 
     noised_data, y = data_processing.add_noise(data, config)
+
     noise_data_df = pd.DataFrame({
         'time_index': np.arange(len(noised_data)),
         'noised_value': noised_data[:, config.Y_IDX],
@@ -119,23 +119,28 @@ if __name__ == '__main__':
     ks_noise_data_excel_path = '../../logs/results/{}/ks_noise0.3_data.xlsx'.format(config.name)
     os.makedirs(os.path.dirname(ks_noise_data_excel_path), exist_ok=True)
     noise_data_df.to_excel(ks_noise_data_excel_path, index=False)
+    print(f"噪声数据已保存到: {ks_noise_data_excel_path}")
 
-    # 创建预测结果DataFrame
+
+    noised_data_norm = (noised_data - mean) / std
+    y_norm = (y - y_mean) / y_std
+
+
+    train_generator = st_delay_model.DataGeneratorForLengthCmp(noised_data_norm, y_norm, train_idxs, config)
+    val_generator = None if val_idxs is None else st_delay_model.DataGeneratorForLengthCmp(noised_data_norm, y_norm, val_idxs, config)
+    test_generator = st_delay_model.DataGeneratorForLengthCmp(noised_data_norm, y_norm, test_idxs, config)
+
+
+    model = st_delay_model.STDelayModel(config, mode='evaluation', log_dir_suffix=config.name)
+    model_path = r'./logs/KS_96_28_Yidx_7_noise_0.3)/weights_epoch_0050_loss.h5'
+    print(model_path)
+    model.load_weights(model_path)
+
+    sets = {'train': train_generator, 'val': val_generator, 'test': test_generator}
     prediction_results_df = pd.DataFrame(columns=[
         'set', 'sample_index', 'time_index', 'known_y', 'true_y', 'pred_y',
         'rmse', 'pcc', 'p_value'
     ])
-
-    train_generator = st_delay_model.DataGeneratorForLengthCmp(data, y, train_idxs, config)
-    val_generator = None if val_idxs is None else st_delay_model.DataGeneratorForLengthCmp(data, y, val_idxs, config)
-    test_generator = st_delay_model.DataGeneratorForLengthCmp(data, y, test_idxs, config)
-    model_path = r'/weights_epoch_0091_loss_0.152_val_loss_0.266_predict_loss_0.361.h5'
-
-
-    print(model_path)
-    model.load_weights(model_path)
-
-    sets = {'train': train_generator, 'val': val_generator, 'test':test_generator}
 
     test_losses = []
     test_pccs = []
@@ -155,7 +160,6 @@ if __name__ == '__main__':
 
         losses = []
         pccs = []
-
         predict_ys = []
         label_ys = []
         known_ys = []
@@ -163,20 +167,27 @@ if __name__ == '__main__':
         for item in generator.get_item():
             input_x, original_label_y, label_matrix = item[0][0], item[-1], item[1][0]
 
-            delay_output, predict_y = model.model.predict(input_x)
+            predictions = model.model.predict(input_x)
+            delay_output = predictions[0]
+            predict_y_norm = predictions[1]
+
             predict_y_matrix = delay_output[0]
-            predict_y = utils.get_y_from_matrix(config, predict_y_matrix.T, weighted=False)
+            predict_y_norm = utils.get_y_from_matrix(config, predict_y_matrix.T, weighted=False)
+
+            predict_y = predict_y_norm * y_std + y_mean
+            label_y = original_label_y[0] * y_std + y_mean
+
             save_delay_matrix(delay_output[0].T, os.path.join(result_dir, f'delay_matrix_{idx}.npy'))
             plot_delay_matrix(delay_output[0].T, os.path.join(result_dir, f'delay_matrix_heatmap_{idx}.png'))
 
-            known_y = input_x[0, :, config.Y_IDX]
-            label_y = original_label_y[0]
+            known_y = input_x[0, :, config.Y_IDX] * y_std + y_mean
+
             loss = np.sqrt(np.mean(np.square(label_y - predict_y)))
             pcc, p_value = pearsonr(label_y, predict_y)
+
             if set_name == 'test':
                 result_csv_dir = os.path.join(result_dir, 'ks_prediction_noise0.3_details')
                 os.makedirs(result_csv_dir, exist_ok=True)
-
                 sample_result = {
                     'index': idx,
                     'known_y': known_y.tolist(),
@@ -185,10 +196,8 @@ if __name__ == '__main__':
                     'rmse': float(loss),
                     'pcc': float(pcc)
                 }
-
                 with open(f'{result_csv_dir}/sample_{idx}.json', 'w') as f:
                     json.dump(sample_result, f, indent=2)
-
                 df = pd.DataFrame({
                     'time_step': np.arange(len(label_y)),
                     'true_value': label_y,
@@ -196,22 +205,13 @@ if __name__ == '__main__':
                 })
                 df.to_csv(f'{result_csv_dir}/sample_{idx}.csv', index=False)
 
-            loss = np.sqrt(np.mean(np.square(label_y - predict_y)))
             known_ys.append(known_y)
             predict_ys.append(predict_y)
             label_ys.append(label_y)
             losses.append(loss)
-
-            min_length = min(len(label_y), len(predict_y))
-            if len(label_y) != len(predict_y):
-                label_y = label_y[:min_length]
-                predict_y = predict_y[:min_length]
-
-            pcc, p_value = pearsonr(label_y, predict_y)
             pccs.append(pcc)
-            time_index = test_idxs[idx] if set_name == 'test' else (
-                val_idxs[idx] if set_name == 'val' else train_idxs[idx])
 
+            time_index = test_idxs[idx] if set_name == 'test' else (val_idxs[idx] if set_name == 'val' else train_idxs[idx])
             new_row = pd.DataFrame({
                 'set': [set_name],
                 'sample_index': [idx],
@@ -230,12 +230,20 @@ if __name__ == '__main__':
             if set_name == 'test':
                 draw_pic(known_y, label_y, predict_y, loss, pcc=pcc, path=os.path.join(pathway_1, '{}.png'.format(idx)),
                          figsize=(8, 6), y_lim=None, x_label='Time', y_label='$d_{k}$',
-                         title='Noise-free case($\sigma = 0$)')  # lorenz
+                         title='Noise-free case($\sigma = 0$)')
 
             idx += 1
-
             if idx % 100 == 0:
                 print(idx)
+
+            print(set_name)
+            print(np.sum(np.array(losses) < 1.0))
+            print('PCC:', pccs)
+            print('loss:', losses)
+            print('mean loss：', np.mean(losses))
+            print('mean pcc:', np.mean(pccs))
+            print(np.argsort(losses)[:100])
+            print(np.argsort(pccs)[::-1][:100])
 
             if set_name == 'train':
                 prediction_results = {}
@@ -247,9 +255,9 @@ if __name__ == '__main__':
                 prediction_results['pccs'] = pccs
                 prediction_results['mean_pccs'] = np.mean(pccs)
                 file_path = os.path.join('logs', 'results', '{}_ks_prediction_noise0.3_results.pkl'.format(config.name))
-
                 with open(file_path, 'wb') as file:
                     pickle.dump(prediction_results, file)
+
 
         if set_name == 'test':
             test_losses = losses
@@ -268,7 +276,6 @@ if __name__ == '__main__':
             },
             'prediction_length': int(len(test_predict_ys[0])) if test_predict_ys else 0
         }
-
         with open(os.path.join(test_result_dir, 'summary.json'), 'w') as f:
             json.dump(summary, f, indent=2)
 
@@ -280,9 +287,9 @@ if __name__ == '__main__':
             plt.title(f'Sample {i} (RMSE: {test_losses[i]:.3f})')
             plt.legend()
         plt.tight_layout()
-        plt.savefig(os.path.join(test_result_dir, 'ks_prediction_noise0.3_samples.png'))
+        plt.savefig(os.path.join(test_result_dir, 'ks_prediction_nois0.3_samples.png'))
         plt.close()
 
-    prediction_excel_path = '../../logs/results/{}/ks_prediction_noise0.3_results.xlsx'.format(config.name)
+    prediction_excel_path = './ks_prediction.xlsx'.format(config.name)
     os.makedirs(os.path.dirname(prediction_excel_path), exist_ok=True)
     prediction_results_df.to_excel(prediction_excel_path, index=False)

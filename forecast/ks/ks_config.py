@@ -5,7 +5,8 @@ class KSConfig(config.Config):
     def __init__(self):
         super(KSConfig, self).__init__()
 
-        self.MODEL_NAME = 'KS'  # the name of data
+
+        self.MODEL_NAME = 'KS'
 
         self.DROP_RATE = 0
 
@@ -18,11 +19,11 @@ class KSConfig(config.Config):
         self.USE_CNN_MLP = True
         self.CNN_FILTERS = [8, 4]
 
-        self.SPATIAL_NODES = [512, 256, 256]
+        self.SPATIAL_NODES = [512, 256, 256]#self.K
 
         self.MERGE_MAP_NODES = [512, 256, 128, self.EMBEDDING_LEN]
 
-        self.Y_IDX = 6
+        self.Y_IDX = 7
 
         self.MODULE_LAST_ACITVATION = False
 
@@ -40,10 +41,11 @@ class KSConfig(config.Config):
 
         self.BATCH_SIZE = 4
 
-        self.EPOCHS = 100
+        self.EPOCHS = 50
 
-        self.LOSS_WEIGHTS = {'consistent_loss': 1}
+        self.LOSS_WEIGHTS = self.LOSS_WEIGHTS = {'known_y_loss': 0.5, 'consistent_loss':1 , 'predict_y_loss': 0.5}
 
+        # TCN_config
         self.ENCODER_DILATION_RATES = [1, 2, 4, 4, 8]
 
         self.ENCODER_NODES = [512, 256, 128, 128, 256]
@@ -68,9 +70,9 @@ class KSConfig(config.Config):
 
         self.WEIGHT_DECAY = 1e-3
 
-        self.BN = False
+        self.BN = True
 
-        self.ADD_NOISE =  True # False
+        self.ADD_NOISE = True# False
 
         self.DATA_NOISE_STRENGTH = 0.3
 
@@ -80,7 +82,7 @@ class KSConfig(config.Config):
     def LR_SCHEDULER(self, epoch):
         if epoch <= 10:
             return self.LR
-        elif epoch <= 40:
+        elif epoch <= 40:  
             return self.LR / 3.0
         elif epoch <= 60:
             return self.LR / 10.0
