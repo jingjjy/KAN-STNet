@@ -5,7 +5,7 @@ class Lorenz96Config(config.Config):
     def __init__(self):
         super(Lorenz96Config, self).__init__()
         #  for lorenz 96 #
-        self.MODEL_NAME = 'lorenz96'  # the name of data
+        self.MODEL_NAME = 'lorenz96_bzh'  # the name of data
 
         self.DROP_RATE = 0
 
@@ -17,13 +17,14 @@ class Lorenz96Config(config.Config):
 
         self.TRAIN_LEN = 96
 
-        self.USE_CNN_MLP = True
-        self.CNN_FILTERS = [64, 32]
-        self.SPATIAL_NODES = [512, self.K]
+        self.USE_CNN_MLP = True  # 是否使用CNN+MLP混合模型
+        self.CNN_FILTERS = [64, 32] # [64,32]  # CNN层的滤波器数量
+        self.SPATIAL_NODES = [512, self.K] #[512, self.K]
+        # self.SPATIAL_NODES = [512, 256, self.K]
 
         self.MERGE_MAP_NODES = [512, 256, 128, self.EMBEDDING_LEN]
 
-        self.Y_IDX = 6
+        self.Y_IDX = 1
 
         self.MODULE_LAST_ACITVATION = False
 
@@ -41,13 +42,15 @@ class Lorenz96Config(config.Config):
 
         self.BATCH_SIZE = 4
 
-        self.EPOCHS = 150
+        self.EPOCHS = 50
 
-        self.LOSS_WEIGHTS = {'consistent_loss': 1}
+        self.LOSS_WEIGHTS = {'known_y_loss': 0.5, 'consistent_loss':1 , 'predict_y_loss': 0.5}
 
+        # TCN_config
         self.ENCODER_DILATION_RATES = [1, 2, 4, 4, 8]
 
-        self.ENCODER_NODES = [128, 128, 64, self.K]
+        #!  self.ENCODER_NODES = [128, 128, 64, 64, self.K]
+        self.ENCODER_NODES = [128, 128, 64, self.K]  # 最后一层必须为self.K(60) #[128, 128, 64, self.K]
 
         self.TCN_BLOCK_REPEAT_TIMES = 1
 
@@ -64,17 +67,21 @@ class Lorenz96Config(config.Config):
 
         self.MERGE_ONLY = False  
 
+        # self.MERGE_FUNC = 'concat'
+        #效果好的
+        # self.MERGE_FUNC = 'add'
         self.MERGE_FUNC = 'film'
 
         self.LR = 1e-3
 
+        # self.WEIGHT_DECAY = 0
         self.WEIGHT_DECAY = 1e-3
 
-        self.BN = False
+        self.BN = True
 
         self.ADD_NOISE = True
 
-        self.DATA_NOISE_STRENGTH = 1.0
+        self.DATA_NOISE_STRENGTH = 0.5
 
         if self.MERGE_ONLY:
             self.MODEL_NAME = self.MODEL_NAME + '_merge_only'
