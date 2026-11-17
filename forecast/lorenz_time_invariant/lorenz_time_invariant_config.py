@@ -9,20 +9,20 @@ class LorenzTimeInvariantConfig(config.Config):
 
         self.USE_CNN_MLP = True
         self.CNN_FILTERS = [64, 32]
-
         self.DROP_RATE = 0
 
-        self.EMBEDDING_LEN = 38
+        self.EMBEDDING_LEN = 18
 
         self.K = 9
 
         self.TRAIN_LEN = 96
 
+
         self.SPATIAL_NODES=[256,self.K]
 
         self.MERGE_MAP_NODES = [512, 256, 128, self.EMBEDDING_LEN]
 
-        self.Y_IDX = 0
+        self.Y_IDX = 1
 
         self.MODULE_LAST_ACITVATION = False
 
@@ -30,9 +30,10 @@ class LorenzTimeInvariantConfig(config.Config):
 
         self.DATASET_RATE = 1
 
-        self.TRAINING = True  # whther is training
+        self.TRAINING = True
 
-        self.ENCODING_LAYER_NUMS = 1  # the stack number of self-attention
+        self.ENCODING_LAYER_NUMS = 1
+
 
         self.TEMPORAL_DIM = self.K
 
@@ -44,9 +45,9 @@ class LorenzTimeInvariantConfig(config.Config):
 
         self.BATCH_SIZE = 4
 
-        self.EPOCHS = 100
+        self.EPOCHS = 150
 
-        self.LOSS_WEIGHTS = {'consistent_loss': 1,}
+        self.LOSS_WEIGHTS = {'known_y_loss': 0.5, 'consistent_loss':1 , 'predict_y_loss': 0.5}
 
         self.ENCODER_DILATION_RATES = [1, 2, 4, 4, 8]
 
@@ -63,7 +64,11 @@ class LorenzTimeInvariantConfig(config.Config):
 
         self.KERNEL_INITIALIZER = 'he_normal'
 
+        self.USE_FEATURE_NORMALIZATION = True
+        self.TEMPORAL_SCALE_FACTOR = 0.1  # 时间特征缩放因子
+
         self.NORMALIZATION = 'ln'
+
 
         self.MERGE_ONLY = False
 
@@ -71,19 +76,30 @@ class LorenzTimeInvariantConfig(config.Config):
 
         self.LR = 1e-3
 
-        self.WEIGHT_DECAY = 5e-3
+        self.WEIGHT_DECAY = 1e-2
 
         self.iterations_count = 10
 
-        self.BN = False
+        self.BN = True
 
         self.ADD_NOISE = False
 
+
         self.DATA_NOISE_STRENGTH = 0
+
+        self.COMPUTE_PCC = True
+        self.VALIDATION_METRICS = ['rmse', 'pcc', 'mae']
+        self.LOG_DETAILED_METRICS = True
+
+        self.COMPUTE_PCC = True
+        self.VALIDATION_METRICS = ['rmse', 'pcc', 'mae']
+        self.LOG_DETAILED_METRICS = True
 
         if self.MERGE_ONLY:
 
             self.MODEL_NAME = self.MODEL_NAME + '_no_TemporalModel'
+
+
 
     def LR_SCHEDULER(self, epoch):
         if epoch <= 20:
